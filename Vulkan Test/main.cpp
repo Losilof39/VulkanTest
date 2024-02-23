@@ -119,14 +119,15 @@ private:
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.apiVersion = VK_API_VERSION_1_0;
 
+
         VkInstanceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
-
         auto extensions = getRequiredExtensions();
         createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        createInfo.ppEnabledExtensionNames = extensions.data();
+        createInfo.ppEnabledExtensionNames = extensions.data();                         // add required extensions
 
+        // setup also debug callback layer
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
         if (enableValidationLayers) {
             createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -160,13 +161,13 @@ private:
         std::vector<VkPhysicalDevice> availableDevices(count);
         vkEnumeratePhysicalDevices(instance, &count, availableDevices.data());
 
-        // print information of GPU that we found
         for (const auto& device : availableDevices)
         {
             if (isDeviceSuitable(device))
                 physicalDevice = device;
         }
 
+        // print information of GPU that we found
         vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
         SDL_Log("Device name: %s\n Device type: %d\n", deviceProperties.deviceName, deviceProperties.deviceType);
 
@@ -187,12 +188,14 @@ private:
         uint32_t familyCount = 0;
         int i = 0;
 
+        // get queue families available on this device
         vkGetPhysicalDeviceQueueFamilyProperties(device, &familyCount, nullptr);
         std::vector<VkQueueFamilyProperties> familiesAvailable(familyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &familyCount, familiesAvailable.data());
 
         for (const auto& family : familiesAvailable)
         {
+            // does queue family do graphics and present commands?
             if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
                 index.graphicsFamily = i;
@@ -207,6 +210,7 @@ private:
 
     void createLogicalDevice()
     {
+        // get first queue family (we need one that support drawing and presenting)
         QueueFamilyIndex index = findQueueFamilies(physicalDevice);
         VkDeviceQueueCreateInfo queueCreateInfo{};
         VkPhysicalDeviceFeatures deviceFeatures{};
@@ -233,9 +237,11 @@ private:
             createInfo.enabledLayerCount = 0;
         }
 
+        // finally create device
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS)
             throw std::runtime_error("Failed to create logical device");
 
+        // get queue handle
         vkGetDeviceQueue(device, 0, index.graphicsFamily.value(), &graphicsQueue);
     }
 
