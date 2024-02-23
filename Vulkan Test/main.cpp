@@ -1,19 +1,19 @@
-#include <vulkan/vulkan.h>
-
-#include <iostream>
-#include <stdexcept>
-#include <vector>
-#include <optional>
-#include <cstring>
-#include <cstdlib>
-#include <SDL2/SDL.h>
-#include <SDL_vulkan.h>
-
 #ifdef _WIN32
 #pragma comment(linker, "/subsystem:windows")
 #define VK_USE_PLATFORM_WIN32_KHR
 #define PLATFORM_SURFACE_EXTENSION_NAME VK_KHR_WIN32_SURFACE_EXTENSION_NAME
 #endif
+
+#include <vulkan/vulkan.h>
+#include <iostream>
+#include <stdexcept>
+#include <vector>
+#include <set>
+#include <optional>
+#include <cstring>
+#include <cstdlib>
+#include <SDL2/SDL.h>
+#include <SDL_vulkan.h>
 
 const std::vector<const char*> validationLayers = {
     "VK_LAYER_KHRONOS_validation"
@@ -42,13 +42,14 @@ void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT
     }
 }
 
-typedef struct QueueFamilyIndex
+struct QueueFamilyIndex
 {
     std::optional<uint32_t> graphicsFamily;
+    std::optional<uint32_t> presentFamily;
 
     bool isComplete()
     {
-        return graphicsFamily.has_value();
+        return graphicsFamily.has_value() && presentFamily.has_value();
     }
 };
 
@@ -79,6 +80,7 @@ private:
     {
         createInstance();
         setupDebugMessenger();
+        createSurface();
     }
 
     void mainloop()
@@ -98,7 +100,8 @@ private:
         if (enableValidationLayers) {
             DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
         }
-        vkDestroyDevice(device, nullptr);
+        vkDestroySurfaceKHR(instance, surface, nullptr);
+        vkDestroyDevice(logicalDevice, nullptr);
         vkDestroyInstance(instance, nullptr);
         SDL_DestroyWindow(pWindow);
         SDL_Quit();
@@ -149,6 +152,14 @@ private:
         }
     }
 
+    void createSurface()
+    {
+        if (SDL_Vulkan_CreateSurface(pWindow, instance, &surface) != SDL_TRUE)
+        {
+            throw std::runtime_error("Failed to create surface!");
+        }
+    }
+
     // abstraction of GPU (our device)
     void setupDevice()
     {
@@ -164,7 +175,10 @@ private:
         for (const auto& device : availableDevices)
         {
             if (isDeviceSuitable(device))
+            {
                 physicalDevice = device;
+                break;
+            }
         }
 
         // print information of GPU that we found
@@ -175,11 +189,11 @@ private:
 
     bool isDeviceSuitable(const VkPhysicalDevice& device)
     {
-        QueueFamilyIndex graphicsFamily = findQueueFamilies(device);
+        QueueFamilyIndex indices = findQueueFamilies(device);
 
 
 
-        return graphicsFamily.isComplete();
+        return indices.isComplete();
     }
 
     QueueFamilyIndex findQueueFamilies(const VkPhysicalDevice& device) 
@@ -195,10 +209,20 @@ private:
 
         for (const auto& family : familiesAvailable)
         {
+
             // does queue family do graphics and present commands?
             if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
                 index.graphicsFamily = i;
+            }
+
+            VkBool32 supportPresent = false;
+            vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &supportPresent);
+
+            if (supportPresent)
+                index.presentFamily = i;
+
+            if (index.isComplete()) {
                 break;
             }
 
@@ -212,19 +236,28 @@ private:
     {
         // get first queue family (we need one that support drawing and presenting)
         QueueFamilyIndex index = findQueueFamilies(physicalDevice);
-        VkDeviceQueueCreateInfo queueCreateInfo{};
+        
         VkPhysicalDeviceFeatures deviceFeatures{};
         VkDeviceCreateInfo createInfo{};
         float queuePriority = 1.0f;
 
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = index.graphicsFamily.value();
-        queueCreateInfo.queueCount = 1;
-        queueCreateInfo.pQueuePriorities = &queuePriority;
+        std::set<uint32_t> uniqueQueueFamilies = { index.graphicsFamily.value() , index.presentFamily.value() };
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+
+        for (uint32_t queueFamily : uniqueQueueFamilies)
+        {
+            VkDeviceQueueCreateInfo queueCreateInfo{};
+            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.queueFamilyIndex = queueFamily;
+            queueCreateInfo.queueCount = 1;
+            queueCreateInfo.pQueuePriorities = &queuePriority;
+
+            queueCreateInfos.push_back(queueCreateInfo);
+        }
 
         createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        createInfo.pQueueCreateInfos = &queueCreateInfo;
-        createInfo.queueCreateInfoCount = 1;
+        createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
+        createInfo.pQueueCreateInfos = queueCreateInfos.data();
         createInfo.pEnabledFeatures = &deviceFeatures;
 
         createInfo.enabledExtensionCount = 0;
@@ -238,11 +271,12 @@ private:
         }
 
         // finally create device
-        if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS)
+        if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &logicalDevice) != VK_SUCCESS)
             throw std::runtime_error("Failed to create logical device");
 
         // get queue handle
-        vkGetDeviceQueue(device, 0, index.graphicsFamily.value(), &graphicsQueue);
+        vkGetDeviceQueue(logicalDevice, 0, index.graphicsFamily.value(), &graphicsQueue);
+        vkGetDeviceQueue(logicalDevice, 0, index.presentFamily.value(), &presentQueue);
     }
 
     // check if the validation / debug layer is supported on this PC
@@ -319,14 +353,18 @@ private:
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VkDevice device;
+    VkDevice logicalDevice;
     VkQueue graphicsQueue;
+    VkQueue presentQueue;
     VkSurfaceKHR surface;
 };
 
 int main(int argc, char* argv[]) {
 
     TriangleExample demo;
+
+    argc;
+    argv;
 
     try
     {
