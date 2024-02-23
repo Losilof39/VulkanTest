@@ -241,7 +241,9 @@ private:
         VkDeviceCreateInfo createInfo{};
         float queuePriority = 1.0f;
 
+        // this helps us whenever graphics queue and present queue are the same...
         std::set<uint32_t> uniqueQueueFamilies = { index.graphicsFamily.value() , index.presentFamily.value() };
+
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
         for (uint32_t queueFamily : uniqueQueueFamilies)
