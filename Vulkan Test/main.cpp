@@ -284,8 +284,10 @@ private:
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
         auto extensions = getRequiredExtensions();
+
+        // add extensions required by the application
         createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-        createInfo.ppEnabledExtensionNames = extensions.data();                         // add required extensions
+        createInfo.ppEnabledExtensionNames = extensions.data();                       
 
         // setup also debug callback layer
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
@@ -302,6 +304,7 @@ private:
             createInfo.pNext = nullptr;
         }
 
+        // create instance with said extension / layers
         VkResult createResult = vkCreateInstance(&createInfo, nullptr, &instance);
 
         if (createResult != VK_SUCCESS) {
@@ -311,6 +314,7 @@ private:
 
     void createSurface()
     {
+        // create handle to platform depependent window surface
         if (SDL_Vulkan_CreateSurface(pWindow, instance, &surface) != SDL_TRUE)
         {
             throw std::runtime_error("Failed to create surface!");
@@ -331,6 +335,7 @@ private:
 
         for (const auto& device : availableDevices)
         {
+            // device is suitable when: supports a swapchain and the desired queue families are found
             if (isDeviceSuitable(device))
             {
                 physicalDevice = device;
@@ -346,14 +351,17 @@ private:
 
     bool isDeviceSuitable(const VkPhysicalDevice& device)
     {
+        // find queue family capable of both graphics and present commands
         QueueFamilyIndex indices = findQueueFamilies(device);
 
+        // check if device supports swapchain
         bool isExtensionSupported = checkDeviceExtensionSupport(device);
 
         bool swapChainAdequate = false;
 
         if (isExtensionSupported)
         {
+            // get info about swapchain
             SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
             swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
         }
@@ -362,9 +370,12 @@ private:
     }
 
     SwapChainSupportDetails querySwapChainSupport(const VkPhysicalDevice& device) {
+
+        // query about how many image the swapchain this device supports
         SwapChainSupportDetails details;
         vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities);
 
+        // query about the format of these images (ex: R32_G32_B32_FLOAT)
         uint32_t formatCount;
         vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
 
@@ -374,6 +385,7 @@ private:
             vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
         }
 
+        // query the present modes: how present commands are processed
         uint32_t presentModeCount;
         vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
 
@@ -959,32 +971,60 @@ private:
     const uint32_t winHeight = 480;
     bool running = true;
 
+    // per-application state of Vulkan and used to initialize the library
+    // plus give its information (application / engine version, etc)
     VkInstance instance;
     VkDebugUtilsMessengerEXT debugMessenger;
+
+    // handle to a GPU device
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+
+    // logical connection to GPU and its primary interface
     VkDevice logicalDevice;
+
+    // handle to GPU available queues (queues selected are the ones capable of doing graphics and present operation)
     VkQueue graphicsQueue;
     VkQueue presentQueue;
+
+    // handle to the surface window, platform specific
+    // used to query information of images that the swapchain can support
     VkSurfaceKHR surface;
 
     // swap chain member stuff
     VkSwapchainKHR swapChain;
+
+    // handle to image
     std::vector<VkImage> swapChainImages;
+
+    // how colors are packed in the images (ex: VK_FORMAT_R8G8B8A8_SRGB)
     VkFormat swapChainImageFormat;
+
+    // height and width of image
     VkExtent2D swapChainExtent;
+
+    // ImageViews are use to access vkImage data from shaders, so they're just handles to vkImage
+    // with more metadata about them
     std::vector<VkImageView> swapChainImageViews;
 
+    // graphics pipeline
     VkRenderPass renderPass;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
 
+    // framebuffers, handles of the vkImages from swapchain
     std::vector<VkFramebuffer> swapChainFramebuffers;
 
+    // pool where commands are allocated
     VkCommandPool commandPool;
+
+    // command where all draw/bind commands are registered
     VkCommandBuffer commandBuffer;
 
+    // signal for when an image is available
     VkSemaphore imageAvailableSemaphore;
     VkSemaphore renderFinishedSemaphore;
+
+    // signal when last frame has finished rendering
     VkFence inFlightFence;
 };
 
