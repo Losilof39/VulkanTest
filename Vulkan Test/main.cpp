@@ -166,6 +166,7 @@ private:
         createGraphicsPipeline();
         createFramebuffers();
         createCommandPool();
+        createTextureImage();
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
@@ -289,6 +290,10 @@ private:
         VkImageLayout            initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
         vkCreateImage(logicalDevice, &createInfo, nullptr, &depthImage);*/
+    }
+
+    void createTextureImage() {
+
     }
 
     void createSwapChain() {
