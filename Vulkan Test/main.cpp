@@ -18,7 +18,10 @@
 #include <algorithm> 
 #include <SDL2/SDL.h>
 #include <SDL_vulkan.h>
+
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 struct Vertex
 {
@@ -31,6 +34,19 @@ const std::vector<Vertex> vertices = {
     {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
     {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
     {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+};
+
+struct PushConstants
+{
+    glm::mat4 model;
+    glm::mat4 view;
+    glm::mat4 projection;
+};
+
+struct PushConstants pushData = {
+    glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)),
+    glm::mat4(1.0f),
+    glm::mat4(1.0f)
 };
 
 const std::vector<uint16_t> indices = {
@@ -629,7 +645,7 @@ private:
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.pVertexBindingDescriptions = &vertexInputBinding;
-        vertexInputInfo.vertexAttributeDescriptionCount = vertexInputAttributs.size();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertexInputAttributs.size());
         vertexInputInfo.pVertexAttributeDescriptions = vertexInputAttributs.data();
 
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -698,12 +714,17 @@ private:
         colorBlending.blendConstants[2] = 0.0f; // Optional
         colorBlending.blendConstants[3] = 0.0f; // Optional
 
+        VkPushConstantRange pushRange;
+        pushRange.size = sizeof(pushData);
+        pushRange.offset = 0;
+        pushRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInfo.setLayoutCount = 0; // Optional
         pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
-        pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
-        pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
+        pipelineLayoutInfo.pushConstantRangeCount = 1; 
+        pipelineLayoutInfo.pPushConstantRanges = &pushRange;
 
         if (vkCreatePipelineLayout(logicalDevice, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create pipeline layout!");
@@ -1001,6 +1022,8 @@ private:
         scissor.extent = swapChainExtent;
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+        //vkCmdPushConstants(commandBuffer, , , 0, , )
+        vkCmdPushConstants(commandBuffer, pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushData), &pushData);
 
         VkBuffer vertexBuffers[] = { vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
