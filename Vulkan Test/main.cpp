@@ -33,6 +33,7 @@ struct Vertex
     glm::vec3 pos;
     glm::vec2 texCoord;
 
+    // define which binding the vertex lives, the stride and how to interpret the input
     static VkVertexInputBindingDescription getBindingDescription() {
         VkVertexInputBindingDescription bindingDescription{};
         bindingDescription.binding = 0;
@@ -66,12 +67,12 @@ const std::vector<Vertex> vertices = {
     {{-0.5f, 0.5f , 0.0f}, {1.0f, 1.0f}}
 };
 
-struct PushConstants
-{
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 projection;
-};
+//struct PushConstants
+//{
+//    glm::mat4 model;
+//    glm::mat4 view;
+//    glm::mat4 projection;
+//};
 
 struct UniformBufferObject {
     alignas(16) glm::mat4 model;
@@ -321,9 +322,16 @@ private:
         stbi_image_free(pixels);
 
         createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImage, textureImageMemory);
-    
+        
+        // transitionImageLayout restricts the type of operation (read/write) you can do to the image
+
+        // in this case the layout of the image is optimized for transfer operation
         transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+
+        // we then copy the image to the GPU-only visible memory
         copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+
+        // and we set the layout again so that now the image should be used only for reading operations by the shader
         transitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
         vkDestroyBuffer(logicalDevice, stagingBuffer, nullptr);
@@ -477,12 +485,16 @@ private:
         swapChainExtent = extent;
     }
 
+    // we're creating here a blueprint
+    // in the sense that we're telling the pipeline
+    // HOW and WHERE samplers and UBOs are going to be presented to the shader
     void createDescriptorSetLayout() {
         VkDescriptorSetLayoutBinding uboLayoutBinding{};
         uboLayoutBinding.binding = 0;
         uboLayoutBinding.descriptorCount = 1;
         uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         uboLayoutBinding.pImmutableSamplers = nullptr;
+        // this is saying that only the vertex shader is going to use these binding
         uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
         VkDescriptorSetLayoutBinding samplerLayoutBinding{};
@@ -507,7 +519,9 @@ private:
         VkDeviceSize bufferSize = sizeof(UniformBufferObject);
 
         uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+        // handle to the memory
         uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+        // host-accessible (meaning US can use it) pointer to the memory
         uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -518,10 +532,12 @@ private:
     }
 
     void createDescriptorPool() {
-
+        // create one descriptor pool for UBOs descriptors
         std::array<VkDescriptorPoolSize, 2> poolSizes{};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        // create a second one but for samplers
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
