@@ -33,12 +33,17 @@
 
 const float MAP_SCALE = 32;
 
+struct RGB
+{
+    uint8_t r, g, b;
+};
+
 struct Image
 {
     VkImage image;
     VkDeviceMemory memory;
     VkImageView view;
-    VkSampler sampler;
+    VkSampler* sampler;
 };
 
 struct Vertex
@@ -269,44 +274,37 @@ private:
 
     void loadPalette()
     {
-        uint8_t temp[256] = {};
-        uint32_t size = 0;
-        pcx_t* p = nullptr;
-
         std::ifstream pal_file("assets/colormap.pcx", std::ios::in | std::ios::binary | std::ios::ate);
 
-        std::vector<char> pal_stream;
-
-        if (pal_file.is_open())
-        {
-            size = pal_file.tellg();
-            pal_file.seekg(std::ios::beg);
-            pal_stream.resize(size);
-            pal_file.read(pal_stream.data(), size);
-
-
-            pal_file.close();
+        if (!pal_file.is_open()) {
+            throw std::runtime_error("Failed to open palette file!");
         }
 
-        p = (pcx_t*)pal_stream.data();
+        uint32_t size = pal_file.tellg();
+        pal_file.seekg(std::ios::beg);
 
-        std::memcpy(temp, (uint8_t*)p + size - 768, 256);
+        std::vector<char> pal_stream(size);
+        pal_file.read(pal_stream.data(), size);
+        pal_file.close();
 
-        for (unsigned int i = 0; i < 256; i++)
-        {
-            unsigned	v;
-            int	r, g, b;
+        // Pointer to the start of the PCX data
+        pcx_t* p = (pcx_t*)pal_stream.data();
 
-            r = temp[i * 3 + 0];
-            g = temp[i * 3 + 1];
-            b = temp[i * 3 + 2];
+        // The last 768 bytes of the PCX file contain the 256-color palette
+        uint8_t* paletteData = (uint8_t*)p + size - 768;
 
-            v = (255U << 24) + (r << 0) + (g << 8) + (b << 16);
-            palette[i] = v;
-            //std::cout << v << std::endl;
+        for (unsigned int i = 0; i < 256; i++) {
+            uint8_t r = paletteData[i * 3 + 0];
+            uint8_t g = paletteData[i * 3 + 1];
+            uint8_t b = paletteData[i * 3 + 2];
+
+            // Store in ARGB format, assuming alpha = 255
+            uint32_t color = (255 << 24) | (b << 16) | (g << 8) | r;
+            palette[i] = color;
         }
 
-        palette[255] &= 0xffffff;
+        // Optional: Make the last entry fully transparent
+        palette[255] &= 0x00FFFFFF;
     }
 
     void buildGammaTable()
@@ -388,7 +386,9 @@ private:
         for (int i = 0; i < s; i++)
         {
             int p = data[i];
+
             trans[i] = palette[p];
+            
 
             /* transparent, so scan around for
                another color to avoid alpha fringes */
@@ -420,6 +420,7 @@ private:
                 ((byte*)&trans[i])[1] = ((byte*)&palette[p])[1];
                 ((byte*)&trans[i])[2] = ((byte*)&palette[p])[2];
             }
+
         }
 
         LightScaleTexture(trans, width, height);
@@ -536,10 +537,9 @@ private:
 
     void createTextureImage(std::string filename, Image& img, unsigned int width, unsigned int height, VkFormat format) {
 
-        unsigned* pixels = loadWalTexture(filename);
-        VkDeviceSize    imageSize = width * height * 4;
+        uint8_t* pixels = (uint8_t*)loadWalTexture(filename);
 
-        //stbi_uc* pixels = loadWalTexture("assets/metal1_2.wal");//stbi_load("assets/statue.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        VkDeviceSize    imageSize = width * height * 4;
 
         if (!pixels) {
             throw std::runtime_error("failed to load texture image!");
@@ -554,7 +554,6 @@ private:
         std::memcpy(data, pixels, static_cast<size_t>(imageSize));
         vkUnmapMemory(logicalDevice, stagingBufferMemory);
 
-        //stbi_image_free(pixels);
 
         //createImage(texWidth, texHeight, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, img.image, img.memory);
         createImage(width, height, format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, img.image, img.memory);
@@ -570,14 +569,14 @@ private:
         // and we set the layout again so that now the image should be used only for reading operations by the shader
         transitionImageLayout(img.image, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-        createTextureImageView(img);
+        createTextureImageView(img, format);
 
         vkDestroyBuffer(logicalDevice, stagingBuffer, nullptr);
         vkFreeMemory(logicalDevice, stagingBufferMemory, nullptr);
     }
 
-    void createTextureImageView(Image& img) {
-        img.view = createImageView(img.image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+    void createTextureImageView(Image& img, VkFormat format) {
+        img.view = createImageView(img.image, format, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) {
@@ -591,6 +590,10 @@ private:
         viewInfo.subresourceRange.levelCount = 1;
         viewInfo.subresourceRange.baseArrayLayer = 0;
         viewInfo.subresourceRange.layerCount = 1;
+        viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+        viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+        viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+        viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
 
         VkImageView imageView;
         if (vkCreateImageView(logicalDevice, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
@@ -598,6 +601,48 @@ private:
         }
 
         return imageView;
+    }
+
+    void ResampleTexture(unsigned* in, int inwidth, int inheight, unsigned* out, int outwidth, int outheight)
+    {
+        int		i, j;
+        unsigned* inrow, * inrow2;
+        unsigned	frac, fracstep;
+        unsigned	p1[1024], p2[1024];
+        byte* pix1, * pix2, * pix3, * pix4;
+
+        fracstep = inwidth * 0x10000 / outwidth;
+
+        frac = fracstep >> 2;
+        for (i = 0; i < outwidth; i++)
+        {
+            p1[i] = 4 * (frac >> 16);
+            frac += fracstep;
+        }
+        frac = 3 * (fracstep >> 2);
+        for (i = 0; i < outwidth; i++)
+        {
+            p2[i] = 4 * (frac >> 16);
+            frac += fracstep;
+        }
+
+        for (i = 0; i < outheight; i++, out += outwidth)
+        {
+            inrow = in + inwidth * (int)((i + 0.25) * inheight / outheight);
+            inrow2 = in + inwidth * (int)((i + 0.75) * inheight / outheight);
+
+            for (j = 0; j < outwidth; j++)
+            {
+                pix1 = (byte*)inrow + p1[j];
+                pix2 = (byte*)inrow + p2[j];
+                pix3 = (byte*)inrow2 + p1[j];
+                pix4 = (byte*)inrow2 + p2[j];
+                ((byte*)(out + j))[0] = (pix1[0] + pix2[0] + pix3[0] + pix4[0]) >> 2;
+                ((byte*)(out + j))[1] = (pix1[1] + pix2[1] + pix3[1] + pix4[1]) >> 2;
+                ((byte*)(out + j))[2] = (pix1[2] + pix2[2] + pix3[2] + pix4[2]) >> 2;
+                ((byte*)(out + j))[3] = (pix1[3] + pix2[3] + pix3[3] + pix4[3]) >> 2;
+            }
+        }
     }
 
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory) {
@@ -635,7 +680,7 @@ private:
         vkBindImageMemory(logicalDevice, image, imageMemory, 0);
     }
 
-    void createTextureSampler(Image& img) {
+    void createTextureSampler() {
         VkPhysicalDeviceProperties properties{};
         vkGetPhysicalDeviceProperties(physicalDevice, &properties);
 
@@ -646,8 +691,8 @@ private:
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        samplerInfo.anisotropyEnable = VK_TRUE;
-        samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+        samplerInfo.anisotropyEnable = VK_FALSE;
+        samplerInfo.maxAnisotropy = 1.0f;
         samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
         samplerInfo.unnormalizedCoordinates = VK_FALSE;
         samplerInfo.compareEnable = VK_FALSE;
@@ -657,7 +702,7 @@ private:
         samplerInfo.minLod = 0.0f;
         samplerInfo.maxLod = 0.0f;
 
-        if (vkCreateSampler(logicalDevice, &samplerInfo, nullptr, &img.sampler) != VK_SUCCESS) {
+        if (vkCreateSampler(logicalDevice, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS) {
             throw std::runtime_error("failed to create texture sampler!");
         }
     }
@@ -779,17 +824,17 @@ private:
         // create one descriptor pool for UBOs descriptors
         std::array<VkDescriptorPoolSize, 2> poolSizes{};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[0].descriptorCount = q2map->mFaces.size();
+        poolSizes[0].descriptorCount = q2map->mTextures.size();
 
         // create a second one but for samplers
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[1].descriptorCount = q2map->mFaces.size();
+        poolSizes[1].descriptorCount = q2map->mTextures.size();
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = q2map->mFaces.size();
+        poolInfo.maxSets = q2map->mTextures.size();
 
         if (vkCreateDescriptorPool(logicalDevice, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor pool!");
@@ -820,7 +865,7 @@ private:
             VkDescriptorImageInfo imageInfo{};
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             imageInfo.imageView = img.view;
-            imageInfo.sampler = img.sampler;
+            imageInfo.sampler = *img.sampler;
 
             std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 
@@ -859,7 +904,8 @@ private:
         fb = {};
 
         descriptorSets.resize(q2map->gameTextures.size());
-
+        createTextureSampler();
+            
         for (auto& f : q2map->mFaces)
         {
             texIndex = f.texture_info;
@@ -876,7 +922,7 @@ private:
             {
                 auto& t = q2map->gameTextures[texIndex];
                 createTextureImage(t->filename, img, t->width, t->height, VK_FORMAT_R8G8B8A8_UNORM);
-                createTextureSampler(img);
+                img.sampler = &textureSampler;
                 createDescriptorSet(img, texIndex);
 
                 gameImages[texIndex] = img;
@@ -2157,9 +2203,10 @@ private:
     VkDeviceMemory textureImageMemory;
     VkImageView textureImageView;
     VkSampler textureSampler;*/
+    VkSampler textureSampler;
     std::map<int, Image> gameImages = {};
 
-    unsigned int palette[256];
+    unsigned palette[256];
     unsigned char gammatable[256];
     uint8_t	intensitytable[256];
     bool mKeyboard[256];
@@ -2175,7 +2222,7 @@ int main(int argc, char* argv[]) {
 
     Q2BspLoader bspLoader;
 
-    demo.q2map = bspLoader.LoadBSP("assets/base1.bsp");
+    demo.q2map = bspLoader.LoadBSP("assets/maps/base1.bsp");
     /*demo.q2map->LoadTextures();
     demo.q2map->PrepareFaces();*/
 

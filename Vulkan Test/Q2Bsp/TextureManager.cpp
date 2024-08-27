@@ -43,42 +43,42 @@ GameTexture* TextureManager::LoadTextureWal(std::string filename)
 
     trans.resize(s);
 
-    for (int i = 0; i < s; i++)
-    {
-        int p = data[i];
-        trans[i] = mPalette[p];
+    //for (int i = 0; i < s; i++)
+    //{
+    //    int p = data[i];
+    //    trans[i] = mPalette[p];
 
-        /* transparent, so scan around for
-           another color to avoid alpha fringes */
-        if (p == 255)
-        {
-            if ((i > width) && (data[i - width] != 255))
-            {
-                p = data[i - width];
-            }
-            else if ((i < s - width) && (data[i + width] != 255))
-            {
-                p = data[i + width];
-            }
-            else if ((i > 0) && (data[i - 1] != 255))
-            {
-                p = data[i - 1];
-            }
-            else if ((i < s - 1) && (data[i + 1] != 255))
-            {
-                p = data[i + 1];
-            }
-            else
-            {
-                p = 0;
-            }
+    //    /* transparent, so scan around for
+    //       another color to avoid alpha fringes */
+    //    if (p == 255)
+    //    {
+    //        if ((i > width) && (data[i - width] != 255))
+    //        {
+    //            p = data[i - width];
+    //        }
+    //        else if ((i < s - width) && (data[i + width] != 255))
+    //        {
+    //            p = data[i + width];
+    //        }
+    //        else if ((i > 0) && (data[i - 1] != 255))
+    //        {
+    //            p = data[i - 1];
+    //        }
+    //        else if ((i < s - 1) && (data[i + 1] != 255))
+    //        {
+    //            p = data[i + 1];
+    //        }
+    //        else
+    //        {
+    //            p = 0;
+    //        }
 
-            /* copy rgb components */
-            ((uint8_t*)&trans[i])[0] = ((uint8_t*)&mPalette[p])[0];
-            ((uint8_t*)&trans[i])[1] = ((uint8_t*)&mPalette[p])[1];
-            ((uint8_t*)&trans[i])[2] = ((uint8_t*)&mPalette[p])[2];
-        }
-    }
+    //        /* copy rgb components */
+    //        ((uint8_t*)&trans[i])[0] = ((uint8_t*)&mPalette[p])[0];
+    //        ((uint8_t*)&trans[i])[1] = ((uint8_t*)&mPalette[p])[1];
+    //        ((uint8_t*)&trans[i])[2] = ((uint8_t*)&mPalette[p])[2];
+    //    }
+    //}
 
     texture->mData = trans;
 
