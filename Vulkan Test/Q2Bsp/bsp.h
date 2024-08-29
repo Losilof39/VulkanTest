@@ -4,6 +4,23 @@
 
 // bsp structures
 
+#define BLOCK_WIDTH 128
+#define BLOCK_HEIGHT 128
+
+#define MAXLIGHTMAPS 4
+#define LIGHTMAP_BYTES 4
+
+#define	SURF_LIGHT		0x1		// value will hold the light strength
+
+#define	SURF_SLICK		0x2		// effects game physics
+
+#define	SURF_SKY		0x4		// don't draw, but add to skybox
+#define	SURF_WARP		0x8		// turbulent water warp
+#define	SURF_TRANS33	0x10
+#define	SURF_TRANS66	0x20
+#define	SURF_FLOWING	0x40	// scroll towards angle
+#define	SURF_NODRAW		0x80	// don't bother referencing the texture
+
 enum BSP_LUMP
 {
     ENTITIES = 0,
@@ -75,9 +92,29 @@ struct bsp_face
           
     uint16_t   texture_info;      // index of the texture info structure	
           
-    uint8_t   lightmap_syles[4]; // styles (bit flags) for the lightmaps
+    uint8_t    lightmap_styles[4]; // styles (bit flags) for the lightmaps
+    uint32_t   lightmap_offset;   // offset of the lightmap (in bytes) in the lightmap lump
+};
+
+struct msurface_t
+{
+    uint16_t   plane;             // index of the plane the face is parallel to
+    uint16_t   plane_side;        // set if the normal is parallel to the plane normal
+
+    uint32_t   first_edge;        // index of the first edge (in the face edge array)
+    uint16_t   num_edges;         // number of consecutive edges (in the face edge array)
+
+    uint16_t   texture_info;      // index of the texture info structure	
+
+    uint8_t    lightmap_styles[4];// styles (bit flags) for the lightmaps
     uint32_t   lightmap_offset;   // offset of the lightmap (in bytes) in the lightmap lump
 
+    int16_t    textureMins[2];
+    int16_t    uvExtents[2];
+    int32_t    light_s;
+    int32_t    light_t;
+    uint8_t*   samples;
+    int        lightmapIndex;
 };
 
 struct bsp_plane

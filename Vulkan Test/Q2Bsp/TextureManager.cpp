@@ -39,9 +39,9 @@ GameTexture* TextureManager::LoadTextureWal(std::string filename)
     texture->width = width;
     texture->height = height;
 
-    s = width * height;
+    /*s = width * height;
 
-    trans.resize(s);
+    trans.resize(s);*/
 
     //for (int i = 0; i < s; i++)
     //{
@@ -115,7 +115,7 @@ void TextureManager::LoadPalette()
 
         p = (pcx_t*)pal_stream.data();
 
-        std::memcpy(temp, (uint8_t*)p + size - 768, 256);
+        std::memcpy(temp, (uint8_t*)p + size - 768, 768);
 
         for (unsigned int i = 0; i < 256; i++)
         {

@@ -138,7 +138,7 @@ void Q2BspMap::LoadTextures()
     char filename[64] = {};
     GameTexture* temp = {};
 
-    TextureManager::GetInstance()->LoadPalette();
+    //TextureManager::GetInstance()->LoadPalette();
     
     for (auto& t : mTextures)
     {
@@ -154,7 +154,7 @@ void Q2BspMap::LoadTextures()
 
 void Q2BspMap::PrepareFaces()
 {
-    int         vertexCount;
+    /*int         vertexCount;
     int         indexCount;
     Facebuffer  fb;
 
@@ -175,10 +175,10 @@ void Q2BspMap::PrepareFaces()
         fb.indexCount = (f.num_edges - 2) * 3;
 
         mFaceBuffers.push_back(fb);
-    }
+    }*/
 }
 
-void Q2BspMap::RecalcVertices(const bsp_face& face, int& vertexCount, int& indexCount)
+void Q2BspMap::RecalcVertices(const msurface_t& face, int& vertexCount, int& indexCount)
 {
     BspVertex      v;
     int         startEdge;
@@ -220,8 +220,6 @@ void Q2BspMap::RecalcVertices(const bsp_face& face, int& vertexCount, int& index
         v.texture[1] /= gameTextures[texinfo]->height;
 
         mFaceVertices.push_back(v);
-
-        
     }
 
     /*numTriangles = face.num_edges - 2;
@@ -254,117 +252,3 @@ void Q2BspMap::SetCameraPos(float x, float y, float z)
 {
     mPos = {x, y, z};
 }
-
-
-//unsigned* Q2BspMap::LoadWalTexture(std::string filename, unsigned int& width, unsigned int& height)
-//{
-//    std::ifstream       wal(filename, std::ios::in | std::ios::binary | std::ios::ate);
-//    uint32_t            size = 0;
-//    std::vector<char>   wal_stream;
-//    wal_header* walHdr;
-//    uint8_t* data;
-//    int                 s;
-//    std::vector<unsigned> trans;
-//
-//    if (wal.is_open())
-//    {
-//        size = (uint32_t)wal.tellg();
-//        wal.seekg(std::ios::beg);
-//        wal_stream.resize(size);
-//        wal.read(wal_stream.data(), size);
-//        wal.close();
-//    }
-//
-//    walHdr = (wal_header*)wal_stream.data();
-//
-//    data = (uint8_t*)walHdr + walHdr->offset[0];
-//
-//    width = walHdr->width;
-//    height = walHdr->height;
-//
-//    s = width * height;
-//
-//    trans.resize(s);
-//
-//    for (int i = 0; i < s; i++)
-//    {
-//        int p = data[i];
-//        trans[i] = palette[p];
-//
-//        /* transparent, so scan around for
-//           another color to avoid alpha fringes */
-//        if (p == 255)
-//        {
-//            if ((i > width) && (data[i - width] != 255))
-//            {
-//                p = data[i - width];
-//            }
-//            else if ((i < s - width) && (data[i + width] != 255))
-//            {
-//                p = data[i + width];
-//            }
-//            else if ((i > 0) && (data[i - 1] != 255))
-//            {
-//                p = data[i - 1];
-//            }
-//            else if ((i < s - 1) && (data[i + 1] != 255))
-//            {
-//                p = data[i + 1];
-//            }
-//            else
-//            {
-//                p = 0;
-//            }
-//
-//            /* copy rgb components */
-//            ((uint8_t*)&trans[i])[0] = ((uint8_t*)&palette[p])[0];
-//            ((uint8_t*)&trans[i])[1] = ((uint8_t*)&palette[p])[1];
-//            ((uint8_t*)&trans[i])[2] = ((uint8_t*)&palette[p])[2];
-//        }
-//    }
-//
-//    //LightScaleTexture(trans, width, height);
-//
-//    return trans.data();
-//}
-//
-//void Q2BspMap::LoadPalette()
-//{
-//    uint8_t temp[256] = {};
-//    uint32_t size = 0;
-//    pcx_t* p = nullptr;
-//
-//    std::ifstream pal_file("assets/colormap.pcx", std::ios::in | std::ios::binary | std::ios::ate);
-//
-//    std::vector<char> pal_stream;
-//
-//    if (pal_file.is_open())
-//    {
-//        size = (uint32_t)pal_file.tellg();
-//        pal_file.seekg(std::ios::beg);
-//        pal_stream.resize(size);
-//        pal_file.read(pal_stream.data(), size);
-//
-//
-//        pal_file.close();
-//    }
-//
-//    p = (pcx_t*)pal_stream.data();
-//
-//    std::memcpy(temp, (uint8_t*)p + size - 768, 256);
-//
-//    for (unsigned int i = 0; i < 256; i++)
-//    {
-//        uint8_t	v;
-//        int	r, g, b;
-//
-//        r = temp[i * 3 + 0];
-//        g = temp[i * 3 + 1];
-//        b = temp[i * 3 + 2];
-//
-//        v = (255U << 24) + (r << 0) + (g << 8) + (b << 16);
-//        palette[i] = v;
-//    }
-//
-//    palette[255] &= 0xffffff;
-//}

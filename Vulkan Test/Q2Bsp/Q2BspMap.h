@@ -19,7 +19,8 @@ struct Facebuffer
 	unsigned int vertexOffset;
 	unsigned int indexCount;
 	uint16_t indexOffset;
-	int descriptor;
+	int descriptorTexture;
+	int descriptorLightmap;
 	//descriptor
 };
 
@@ -34,12 +35,9 @@ public:
 	unsigned int PointOnPlane(const point3f& pos, const point3f& normal, float dist);
 	void LoadTextures();
 	void PrepareFaces();
-	void RecalcVertices(const bsp_face& face, int& vertexCount, int& indexCount);
+	void RecalcVertices(const msurface_t& face, int& vertexCount, int& indexCount);
 	point3f* GetCameraPos();
 	void SetCameraPos(float x, float y, float z);
-
-	void OnRender();
-	void RenderFaces();
 
 
 	bsp_header mHeader = {};
@@ -50,7 +48,7 @@ public:
 	std::vector <point3f> mVertices;
 	std::vector <bsp_vis_offset> mPVS;
 	std::vector <bsp_node> mNodes;
-	std::vector <bsp_face> mFaces;
+	std::vector <msurface_t> mSurfaces;
 	std::vector <bsp_texinfo> mLightmaps;
 	std::vector <bsp_leaf> mLeaves;
 	std::vector <uint16_t> mLeafFacetable;
@@ -63,6 +61,7 @@ public:
 	//std::vector<uint16_t> mFaceIndices;
 	std::vector<Facebuffer> mFaceBuffers;
 	std::vector<int> mVisibleFaces;
+	std::vector<uint8_t> lightmapData;
 
 private:
 

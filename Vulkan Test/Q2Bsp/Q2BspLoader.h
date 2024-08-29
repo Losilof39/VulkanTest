@@ -12,6 +12,9 @@ public:
 	Q2BspMap* LoadBSP(std::string filename);
 private:
 
+	void LoadFaceLump(Q2BspMap* map, std::fstream& file, std::vector<msurface_t>& arr, BSP_LUMP lump);
+	void CalcSurfaceExtents(const Q2BspMap* q2map, msurface_t* s);
+
 	template<class T>
 	void LoadBSPLump(Q2BspMap* map, std::fstream& file, std::vector<T>& arr, BSP_LUMP lump);
 
