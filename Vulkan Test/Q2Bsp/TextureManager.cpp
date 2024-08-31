@@ -82,11 +82,6 @@ GameTexture* TextureManager::LoadTextureWal(std::string filename)
 
     texture->mData = trans;
 
-    if (filename == "")
-    {
-
-    }
-
     //LightScaleTexture(trans, width, height);
 
     return texture;

@@ -256,9 +256,6 @@ private:
         createFramebuffers();
         loadPalette();
         buildGammaTable();
-        //createTextureImage();
-        //createTextureImageView();
-        //createTextureSampler();
         createDescriptorPool();
         createUniformBuffers();
         loadBspTextures();
@@ -448,7 +445,8 @@ private:
             vkFreeMemory(logicalDevice, uniformBuffersMemory[i], nullptr);
         }
 
-        vkDestroyDescriptorSetLayout(logicalDevice, descriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(logicalDevice, textureDescriptorSetLayout, nullptr);
+        vkDestroyDescriptorSetLayout(logicalDevice, lightmapDescriptorSetLayout, nullptr);
 
         vkDestroyBuffer(logicalDevice, vertexBuffer, nullptr);
         vkFreeMemory(logicalDevice, vertexBufferMemory, nullptr);
@@ -766,7 +764,7 @@ private:
         }
     }
 
-    // taken from: https://github.com/danqua/bsp-viewer/blob/0eff56929735f679790ba853ebd880e8b590ce3b/code/quake_map.cpp#L14
+
     bool LM_AllocBlock(int32_t width, int32_t height, int32_t* x, int32_t* y)
     {
         int		i, j;
@@ -813,6 +811,7 @@ private:
         int			nummaps;
         float* bl;
         bsp_texinfo texinfo;
+        lightstyle_t* style;
 
         texinfo = q2map->mTextures[surf.texture_info];
 
@@ -834,6 +833,12 @@ private:
             for (i = 0; i < size * 3; i++)
                 s_blocklights[i] = 255;
 
+            for (maps = 0; maps < MAXLIGHTMAPS && surf.lightmap_styles[maps] != 255;
+                maps++)
+            {
+                style = &curLightStyle[surf.lightmap_styles[maps]];
+            }
+
             goto store;
         }
 
@@ -844,7 +849,7 @@ private:
 
         lightmap = surf.samples;
 
-        // add all the lightmaps
+         //add all the lightmaps
         if (nummaps == 1)
         {
             int maps;
@@ -854,14 +859,29 @@ private:
             {
                 bl = s_blocklights;
 
+                for (i = 0; i < 3; i++)
+                    scale[i] = curLightStyle[surf.lightmap_styles[maps]].rgb[i];
 
-                for (i = 0; i < size; i++, bl += 3)
+                if (scale[0] == 1.0F &&
+                    scale[1] == 1.0F &&
+                    scale[2] == 1.0F)
                 {
-                    bl[0] = lightmap[i * 3 + 0];
-                    bl[1] = lightmap[i * 3 + 1];
-                    bl[2] = lightmap[i * 3 + 2];
+                    for (i = 0; i < size; i++, bl += 3)
+                    {
+                        bl[0] = lightmap[i * 3 + 0];
+                        bl[1] = lightmap[i * 3 + 1];
+                        bl[2] = lightmap[i * 3 + 2];
+                    }
                 }
-
+                else
+                {
+                    for (i = 0; i < size; i++, bl += 3)
+                    {
+                        bl[0] = lightmap[i * 3 + 0] * scale[0];
+                        bl[1] = lightmap[i * 3 + 1] * scale[1];
+                        bl[2] = lightmap[i * 3 + 2] * scale[2];
+                    }
+                }
                 lightmap += size * 3;		// skip to next lightmap
             }
         }
@@ -876,13 +896,29 @@ private:
             {
                 bl = s_blocklights;
 
-                for (i = 0; i < size; i++, bl += 3)
-                {
-                    bl[0] += lightmap[i * 3 + 0];
-                    bl[1] += lightmap[i * 3 + 1];
-                    bl[2] += lightmap[i * 3 + 2];
-                }
+                for (i = 0; i < 3; i++)
+                    scale[i] = curLightStyle[surf.lightmap_styles[maps]].rgb[i];
 
+                if (scale[0] == 1.0F &&
+                    scale[1] == 1.0F &&
+                    scale[2] == 1.0F)
+                {
+                    for (i = 0; i < size; i++, bl += 3)
+                    {
+                        bl[0] += lightmap[i * 3 + 0];
+                        bl[1] += lightmap[i * 3 + 1];
+                        bl[2] += lightmap[i * 3 + 2];
+                    }
+                }
+                else
+                {
+                    for (i = 0; i < size; i++, bl += 3)
+                    {
+                        bl[0] += lightmap[i * 3 + 0] * scale[0];
+                        bl[1] += lightmap[i * 3 + 1] * scale[1];
+                        bl[2] += lightmap[i * 3 + 2] * scale[2];
+                    }
+                }
                 lightmap += size * 3;		// skip to next lightmap
             }
         }
@@ -951,9 +987,35 @@ private:
         }
     }
 
+    void LoadTextures()
+    {
+        char filename[64] = {};
+        GameTexture* temp = {};
+        Image textureImage;
+
+        textureDescriptorSets.reserve(q2map->mTextures.size());
+        createTextureSampler();
+
+        for (auto& t : q2map->mTextures)
+        {
+            std::sprintf(filename, "assets/textures/%s.wal", t.texture_name);
+
+            temp = TextureManager::GetInstance()->LoadTextureWal(filename);
+
+            std::memcpy((void*)temp->vecs, (void*)t.vecs, sizeof(t.vecs));
+
+            createTextureImage(filename, textureImage, temp->width, temp->height, VK_FORMAT_R8G8B8A8_UNORM);
+
+            createDescriptorSet(textureImage);
+
+            q2map->gameTextures.emplace_back(temp);
+        }
+    }
+
     void loadBspTextures()
     {
-        q2map->LoadTextures();
+        //q2map->LoadTextures();
+        LoadTextures();
         PrepareFaces();
     }
 
@@ -1038,19 +1100,30 @@ private:
         samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
         VkDescriptorSetLayoutBinding samplerLightmapLayoutBinding{};
-        samplerLightmapLayoutBinding.binding = 2;
+        samplerLightmapLayoutBinding.binding = 0;
         samplerLightmapLayoutBinding.descriptorCount = 1;
         samplerLightmapLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         samplerLightmapLayoutBinding.pImmutableSamplers = nullptr;
         samplerLightmapLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-        std::array<VkDescriptorSetLayoutBinding, 3> bindings = { uboLayoutBinding, samplerLayoutBinding, samplerLightmapLayoutBinding };
-        VkDescriptorSetLayoutCreateInfo layoutInfo{};
-        layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-        layoutInfo.pBindings = bindings.data();
+        std::array<VkDescriptorSetLayoutBinding, 2> textureBindings = { uboLayoutBinding, samplerLayoutBinding };
+        std::array<VkDescriptorSetLayoutBinding, 1> lightmapBindings = { samplerLightmapLayoutBinding };
 
-        if (vkCreateDescriptorSetLayout(logicalDevice, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+        VkDescriptorSetLayoutCreateInfo textureLayoutInfo{};
+        textureLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        textureLayoutInfo.bindingCount = static_cast<uint32_t>(textureBindings.size());
+        textureLayoutInfo.pBindings = textureBindings.data();
+
+        VkDescriptorSetLayoutCreateInfo lightmapLayoutInfo{};
+        lightmapLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        lightmapLayoutInfo.bindingCount = static_cast<uint32_t>(lightmapBindings.size());
+        lightmapLayoutInfo.pBindings = lightmapBindings.data();
+
+        if (vkCreateDescriptorSetLayout(logicalDevice, &textureLayoutInfo, nullptr, &textureDescriptorSetLayout) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create descriptor set layout!");
+        }
+
+        if (vkCreateDescriptorSetLayout(logicalDevice, &lightmapLayoutInfo, nullptr, &lightmapDescriptorSetLayout) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor set layout!");
         }
     }
@@ -1083,22 +1156,22 @@ private:
 
         // create a third one for lightmaps
         poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[2].descriptorCount = q2map->mTextures.size();
+        poolSizes[2].descriptorCount = MAX_LIGHTMAPS;
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = q2map->mTextures.size();
+        poolInfo.maxSets = q2map->mTextures.size() + MAX_LIGHTMAPS;
 
         if (vkCreateDescriptorPool(logicalDevice, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
             throw std::runtime_error("failed to create descriptor pool!");
         }
     }
 
-    void createLightmapDescriptorSet(Image& lightmap, const VkDescriptorSet& ds )
+    void createLightmapDescriptorSet(Image& lightmap, VkDescriptorSet& ds )
     {
-        std::vector<VkDescriptorSetLayout> layouts(1, descriptorSetLayout);
+        std::vector<VkDescriptorSetLayout> layouts(1, lightmapDescriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo{};
 
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1106,9 +1179,9 @@ private:
         allocInfo.descriptorSetCount = 1;
         allocInfo.pSetLayouts = layouts.data();
 
-        /*if (vkAllocateDescriptorSets(logicalDevice, &allocInfo, &ds) != VK_SUCCESS) {
+        if (vkAllocateDescriptorSets(logicalDevice, &allocInfo, &ds) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate descriptor sets!");
-        }*/
+        }
 
         VkDescriptorImageInfo lightmapImageInfo{};
         lightmapImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1119,7 +1192,7 @@ private:
 
         descriptorWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrites.dstSet = ds;
-        descriptorWrites.dstBinding = 2;
+        descriptorWrites.dstBinding = 0;
         descriptorWrites.dstArrayElement = 0;
         descriptorWrites.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites.descriptorCount = 1;
@@ -1128,18 +1201,18 @@ private:
         vkUpdateDescriptorSets(logicalDevice, 1, &descriptorWrites, 0, nullptr);
     }
 
-    void createDescriptorSet(Image& texture, int index) {
-        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+    void createDescriptorSet(Image& texture) {
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, textureDescriptorSetLayout);
         VkDescriptorSetAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocInfo.descriptorPool = descriptorPool;
         allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
         allocInfo.pSetLayouts = layouts.data();
 
-        VkDescriptorSet ds = {};
+        textureDescriptorSets.push_back(VkDescriptorSet());
         
 
-        if (vkAllocateDescriptorSets(logicalDevice, &allocInfo, &ds) != VK_SUCCESS) {
+        if (vkAllocateDescriptorSets(logicalDevice, &allocInfo, &textureDescriptorSets.back()) != VK_SUCCESS) {
             throw std::runtime_error("failed to allocate descriptor sets!");
         }
 
@@ -1154,15 +1227,10 @@ private:
             imageInfo.imageView = texture.view;
             imageInfo.sampler = textureSampler;
 
-            /*VkDescriptorImageInfo lightmapImageInfo{};
-            lightmapImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            lightmapImageInfo.imageView = lightmap.view;
-            lightmapImageInfo.sampler = lightmapSampler;*/
-
             std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
 
             descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[0].dstSet = ds;
+            descriptorWrites[0].dstSet = textureDescriptorSets.back();
             descriptorWrites[0].dstBinding = 0;
             descriptorWrites[0].dstArrayElement = 0;
             descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -1170,24 +1238,14 @@ private:
             descriptorWrites[0].pBufferInfo = &bufferInfo;
 
             descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[1].dstSet = ds;
+            descriptorWrites[1].dstSet = textureDescriptorSets.back();
             descriptorWrites[1].dstBinding = 1;
             descriptorWrites[1].dstArrayElement = 0;
             descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             descriptorWrites[1].descriptorCount = 1;
             descriptorWrites[1].pImageInfo = &imageInfo;
 
-            /*descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrites[2].dstSet = ds;
-            descriptorWrites[2].dstBinding = 2;
-            descriptorWrites[2].dstArrayElement = 0;
-            descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptorWrites[2].descriptorCount = 1;
-            descriptorWrites[2].pImageInfo = &lightmapImageInfo;*/
-
             vkUpdateDescriptorSets(logicalDevice, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-
-            textureDescriptorSets[index] = ds;
         }
     }
 
@@ -1202,14 +1260,25 @@ private:
         int smax, tmax;
         bsp_texinfo texinfo;
         VkDescriptorSet ds;
+        static lightstyle_t	lightstyles[MAX_LIGHTSTYLES];
+
+        // init lightstyle for vanilla accuracy
+        for (unsigned int i = 0; i < MAX_LIGHTSTYLES; i++)
+        {
+            lightstyles[i].rgb[0] = 1;
+            lightstyles[i].rgb[1] = 1;
+            lightstyles[i].rgb[2] = 1;
+            lightstyles[i].white = 3;
+        }
+
+        curLightStyle = lightstyles;
 
         vertexCount = 0;
         indexCount = 0;
         fb = {};
 
-        textureDescriptorSets.resize(q2map->gameTextures.size());
+        lightmapDescriptorSets.reserve(MAX_LIGHTMAPS);
         createLightmapSampler();
-        createTextureSampler();
             
         for (auto& f : q2map->mSurfaces)
         {
@@ -1219,17 +1288,8 @@ private:
             fb.vertexOffset = vertexCount;
             fb.indexOffset = indexCount;
 
-            // create one descriptor set per texture
-            if (gameImages.count(texIndex) < 1)
-            {
-                auto& t = q2map->gameTextures[texIndex];
-                
-                createTextureImage(t->filename, textureImage, t->width, t->height, VK_FORMAT_R8G8B8A8_UNORM);
-
-                createDescriptorSet(textureImage, texIndex);
-
-                gameImages[texIndex] = textureImage;
-            }
+            fb.descriptorTexture = texIndex;
+            fb.descriptorLightmap = -1;         // set it at first to -1, change if a lightmap can be built
 
             // build lightmap
             if (!(texinfo.flags & (SURF_SKY | SURF_TRANS33 | SURF_TRANS66 | SURF_WARP)))
@@ -1242,15 +1302,19 @@ private:
                 {
                     std::memset(allocated, 0, sizeof(allocated));
 
-                    lightmapImages.push_back(Image());
+                    lightmapDescriptorSets.push_back(VkDescriptorSet());
+
                     createLightmapImage(lightmapBuffer, lightmapImages[currentLightmapIndex], BLOCK_WIDTH, BLOCK_HEIGHT, VK_FORMAT_R8G8B8A8_UNORM);
+                    createLightmapDescriptorSet(lightmapImages[currentLightmapIndex], lightmapDescriptorSets[currentLightmapIndex]);
 
                     currentLightmapIndex++;
 
-                    LM_AllocBlock(smax, tmax, &f.light_s, &f.light_t);
+                    if (!LM_AllocBlock(smax, tmax, &f.light_s, &f.light_t))
+                        throw std::runtime_error("Failed to allocate lightmap block");
                 }
 
-                f.lightmapIndex = currentLightmapIndex;
+                fb.descriptorLightmap = currentLightmapIndex;
+                //f.lightmapIndex = currentLightmapIndex;
 
                 base = lightmapBuffer;
                 base += (f.light_t * BLOCK_WIDTH + f.light_s) * LIGHTMAP_BYTES;
@@ -1258,27 +1322,19 @@ private:
                 buildLightmapSurface(f, base, BLOCK_WIDTH * LIGHTMAP_BYTES);
             }
 
+            // calculate texture and lightmap coordinates per vertex
             RecalcVertices(f, vertexCount, indexCount);
 
             fb.vertexCount = f.num_edges;
             fb.indexCount = (f.num_edges - 2) * 3;
-            
-            fb.descriptorTexture = texIndex;
 
             q2map->mFaceBuffers.push_back(fb);
         }
 
         // dont forget to add the last lightmap
-        lightmapImages.push_back(Image());
+        lightmapDescriptorSets.push_back(VkDescriptorSet());
         createLightmapImage(lightmapBuffer, lightmapImages[currentLightmapIndex], BLOCK_WIDTH, BLOCK_HEIGHT, VK_FORMAT_R8G8B8A8_UNORM);
-
-        for (auto& surf : q2map->mSurfaces)
-        {
-            int lmTex = surf.lightmapIndex;
-            ds = textureDescriptorSets[surf.texture_info];
-
-            createLightmapDescriptorSet(lightmapImages[lmTex], ds);
-        }
+        createLightmapDescriptorSet(lightmapImages[currentLightmapIndex], lightmapDescriptorSets[currentLightmapIndex]);
 
     }
 
@@ -1327,6 +1383,7 @@ private:
 
             // lightmapcoordinates
 
+            // s
             v.lightmap[0] = q2map->gameTextures[texinfo]->vecs[0][3] + v.pos.x * q2map->gameTextures[texinfo]->vecs[0][0] +
                 v.pos.y * q2map->gameTextures[texinfo]->vecs[0][1] + v.pos.z * q2map->gameTextures[texinfo]->vecs[0][2];
 
@@ -1348,20 +1405,6 @@ private:
 
 
         }
-
-        /*numTriangles = face.num_edges - 2;
-
-        for (unsigned int i = 1; i <= numTriangles; i++)
-        {
-            lindex = face.first_edge + i;
-
-            mFaceIndices.push_back(indexCount + face.first_edge);
-            mFaceIndices.push_back(indexCount + lindex         );
-            mFaceIndices.push_back(indexCount + lindex + 1     );
-
-        }
-
-        indexCount += numTriangles * 3;*/
 
         numTriangles = face.num_edges - 2;
 
@@ -1738,10 +1781,12 @@ private:
         range.offset = 0;
         range.size = sizeof(float);
 
+        std::array<VkDescriptorSetLayout, 2> descriptorSetLayouts = { textureDescriptorSetLayout, lightmapDescriptorSetLayout };
+
         VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
         pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInfo.setLayoutCount = 1;
-        pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
+        pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+        pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
         pipelineLayoutInfo.pPushConstantRanges = &range;
         pipelineLayoutInfo.pushConstantRangeCount = 1;
 
@@ -2207,9 +2252,13 @@ private:
 
         for (auto& idx : q2map->mVisibleFaces)
         {
-
             Facebuffer fb = q2map->mFaceBuffers[idx];
+
+            if (fb.descriptorLightmap == -1)
+                continue;
+
             VkDescriptorSet dsTexture = textureDescriptorSets[fb.descriptorTexture];
+            VkDescriptorSet dsLightmap = lightmapDescriptorSets[fb.descriptorLightmap];
 
             // tell the sucker to bind our vertex buffer
             /*vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
@@ -2217,6 +2266,7 @@ private:
 
             
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &dsTexture, 0, nullptr);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 1, 1, &dsLightmap, 0, nullptr);
 
             // bingo a triangle!
             //vkCmdDrawIndexed(commandBuffer, fb.vertexCount, 1, fb.vertexOffset, 0, 0);
@@ -2503,8 +2553,8 @@ private:
     }
 
     SDL_Window* pWindow;
-    const uint32_t winWidth = 640;
-    const uint32_t winHeight = 480;
+    const uint32_t winWidth = 1280;
+    const uint32_t winHeight = 720;
     bool running = true;
 
     // per-application state of Vulkan and used to initialize the library
@@ -2580,20 +2630,25 @@ private:
     VkDeviceMemory indexBufferMemory;*/
 
     // descriptor set layout (uniform buffer and textures)
-    VkDescriptorSetLayout descriptorSetLayout;
     VkDescriptorPool descriptorPool;
+    VkDescriptorSetLayout textureDescriptorSetLayout;
+    VkDescriptorSetLayout lightmapDescriptorSetLayout;
     std::vector<VkDescriptorSet> textureDescriptorSets;
+    std::vector<VkDescriptorSet> lightmapDescriptorSets;
 
     std::vector<VkBuffer> uniformBuffers;
     std::vector<VkDeviceMemory> uniformBuffersMemory;
     std::vector<void*> uniformBuffersMapped;
 
     VkSampler textureSampler;
-    VkSampler lightmapSampler;
-    std::vector<Image> lightmapImages;
-    uint8_t   lightmapBuffer[4 * BLOCK_WIDTH * BLOCK_HEIGHT];
-    int       currentLightmapIndex = 0;
     std::map<int, Image> gameImages = {};
+
+    // lightmaps stuff
+    VkSampler lightmapSampler;
+    Image lightmapImages[MAX_LIGHTMAPS];
+    uint8_t   lightmapBuffer[4 * BLOCK_WIDTH * BLOCK_HEIGHT * 4] = {};
+    int       currentLightmapIndex = 0;
+    lightstyle_t*	curLightStyle;
 
     unsigned palette[256];
     unsigned char gammatable[256];
@@ -2613,7 +2668,7 @@ int main(int argc, char* argv[]) {
 
     Q2BspLoader bspLoader;
 
-    demo.q2map = bspLoader.LoadBSP("assets/maps/base1.bsp");
+    demo.q2map = bspLoader.LoadBSP("assets/maps/ware1.bsp");
 
     try
     {

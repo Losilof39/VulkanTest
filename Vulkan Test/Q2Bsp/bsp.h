@@ -8,7 +8,9 @@
 #define BLOCK_HEIGHT 128
 
 #define MAXLIGHTMAPS 4
+#define MAX_LIGHTMAPS 128
 #define LIGHTMAP_BYTES 4
+#define MAX_LIGHTSTYLES 4
 
 #define	SURF_LIGHT		0x1		// value will hold the light strength
 
@@ -40,6 +42,13 @@ enum BSP_LUMP
     BRUSHES,        
     BRUSHSIDES,     
 };
+
+struct lightstyle_t
+{
+    float		rgb[3];			// 0.0 - 2.0
+    float		white;			// highest of rgb
+};
+
 
 struct bsp_lump
 {
